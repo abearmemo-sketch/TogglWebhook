@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Toggl Timer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700&family=Roboto+Mono:wght@400;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: rgba(0, 0, 0, 0.15);
+        }
+        #timer-display {
+            font-family: 'Roboto Mono', monospace;
+        }
+    </style>
+</head>
+<body class="text-white flex items-center justify-center min-h-screen p-4">
+    <div class="w-full max-w-md flex flex-col items-center text-center">
+        <h1 class="text-xl md:text-2xl font-bold mb-4 text-gray-400">Toggl Timer</h1>
+        <div id="status-display" class="w-full flex flex-col items-center">
+            <div id="project-description" class="hidden text-xl md:text-2xl font-semibold mb-2 truncate w-full px-2"></div>
+            <div id="timer-display" class="hidden text-5xl md:text-6xl font-extrabold tracking-tight mb-2">
+                <span id="hours"></span>:<span id="minutes">00</span>:<span id="seconds">00</span>
+            </div>
+            <div id="start-time" class="hidden text-sm text-gray-400 mb-4"></div>
+            <div id="status-message" class="text-lg md:text-xl font-semibold mb-4">讀取中...</div>
+        </div>
+    </div>
+
+    <script>
+        const statusMessage = document.getElementById('status-message');
+        const projectDescription = document.getElementById('project-description');
+        const timerDisplay = document.getElementById('timer-display');
+        const startTimeDiv = document.getElementById('start-time');
+
+        let timerInterval = null;
+        let currentStart = null;
+
+        function formatTime(totalSeconds) {
+            const hours = Math.floor(totalSeconds / 3600);
+            const minutes = Math.floor((totalSeconds % 3600) / 60);
+            const seconds = totalSeconds % 60;
+            const pad = (num) => String(num).padStart(2, '0');
+            if (hours > 0) {
+                return `${hours}:${pad(minutes)}:${pad(seconds)}`;
+            } else {
+                return `${pad(minutes)}:${pad(seconds)}`;
+            }
+        }
+
+        function formatStartTime(date) {
+            return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+        }
+
+        function updateElapsed() {
+            if (!currentStart) return;
+            const now = new Date();
+            const diffInSeconds = Math.floor((now - currentStart) / 1000);
+            const timeStr = formatTime(diffInSeconds);
+            const parts = timeStr.split(':');
+            if (parts.length === 3) {
+                document.getElementById('hours').textContent = parts[0];
+                document.getElementById('minutes').textContent = parts[1];
+                document.getElementById('seconds').textContent = parts[2];
+            } else {
+                document.getElementById('hours').textContent = '';
+                document.getElementById('minutes').textContent = parts[0];
+                document.getElementById('seconds').textContent = parts[1];
+            }
+        }
+
+        function startTimer(entry) {
+            if (timerInterval) clearInterval(timerInterval);
+            const desc = entry.description || "（無描述）";
+            const startTime = new Date(entry.start);
+            currentStart = startTime;
+
+            projectDescription.textContent = desc;
+            projectDescription.title = desc;
+            startTimeDiv.textContent = `( start at: ${formatStartTime(startTime)} )`;
+
+            statusMessage.classList.add('hidden');
+            projectDescription.classList.remove('hidden');
+            timerDisplay.classList.remove('hidden');
+            startTimeDiv.classList.remove('hidden');
+
+            updateElapsed();
+            timerInterval = setInterval(updateElapsed, 1000);
+        }
+
+        function stopTimer() {
+            if (timerInterval) clearInterval(timerInterval);
+            currentStart = null;
+            timerDisplay.classList.add('hidden');
+            projectDescription.classList.add('hidden');
+            startTimeDiv.classList.add('hidden');
+            statusMessage.classList.remove('hidden');
+            statusMessage.textContent = "目前沒有計時";
+        }
+
+        // SSE 連線
+        const evtSource = new EventSource("/api/webhook");
+        evtSource.onmessage = function(e) {
+            try {
+                const data = JSON.parse(e.data);
+                if (data.current_timer && data.current_timer.id) {
+                    startTimer(data.current_timer);
+                } else {
+                    stopTimer();
+                }
+            } catch(err) {
+                console.error("SSE資料解析錯誤", err);
+            }
+        };
+
+        evtSource.onerror = function(err) {
+            console.error("SSE連線錯誤", err);
+        };
+    </script>
+</body>
+</html>
